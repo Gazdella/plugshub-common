@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plugshub-common"
-version = "0.1.0"
+version = "0.2.0"
 description = "Shared fleet helpers (SaaS Constitution Appendix A) — the standard health/readiness probe shapes, identical across every service."
 requires-python = ">=3.9"
 authors = [{ name = "Da-tene" }]
