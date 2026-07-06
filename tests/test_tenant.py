@@ -15,7 +15,8 @@ def test_prefixed_form_passes():
 
 
 def test_unknown_rejected_fail_closed():
-    assert validate_tenant("11111111-1111-1111-1111-111111111111", _MEMBERS, raise_on_invalid=False) is False
+    unknown = "11111111-1111-1111-1111-111111111111"
+    assert validate_tenant(unknown, _MEMBERS, raise_on_invalid=False) is False
 
 
 def test_injection_and_empty_rejected():

@@ -4,10 +4,64 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plugshub-common"
-version = "0.2.0"
-description = "Shared fleet helpers (SaaS Constitution Appendix A) — the standard health/readiness probe shapes, identical across every service."
+version = "0.3.0"
+description = "Shared fleet helpers (SaaS Constitution Appendix A) — config, logging, errors, HTTP middleware, service auth, DB pool + tenant resolver, resilience, clients, messaging, validation, authorization, audit, feature flags, and canonical time/money. Byte-identical across every service."
 requires-python = ">=3.9"
 authors = [{ name = "Da-tene" }]
+readme = "README.md"
+
+# Core dependencies — kept light. Config (Article III) and validation (Article VI §5) are
+# cross-cutting requirements, so pydantic ships in the core. Heavier backends are optional extras.
+dependencies = [
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3",
+]
+
+[project.optional-dependencies]
+# HTTP edge + inter-service client (Articles IV/V/VIII): FastAPI/Starlette middleware + aiohttp.
+http = ["fastapi>=0.100", "starlette>=0.27", "aiohttp>=3.8"]
+# Shared async DB pool + tenant resolver (Article IX).
+db = ["aiomysql>=0.1"]
+# Redis-backed feature flags / kill switches (Article XXVI §4).
+redis = ["redis>=4"]
+# Reliable messaging backends (Article VIII §3) — the in-memory defaults need nothing; a shared
+# processed-id / DLQ store in production commonly uses redis.
+messaging = ["redis>=4"]
+# Everything, for a service that uses the full toolbox.
+all = [
+    "fastapi>=0.100",
+    "starlette>=0.27",
+    "aiohttp>=3.8",
+    "aiomysql>=0.1",
+    "redis>=4",
+]
+# Local development / CI gates (Article XVII §5).
+dev = [
+    "pytest>=7",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.1",
+    "mypy>=1.0",
+]
+
+[project.urls]
+Repository = "https://github.com/Gazdella/plugshub-common"
 
 [tool.setuptools]
 packages = ["plugshub_common"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["B008"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+warn_unused_ignores = false
