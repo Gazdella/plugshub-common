@@ -6,6 +6,29 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
+## [0.4.1] - 2026-07-06
+
+### Fixed
+
+- `db` — the shared `DBPool` now implements the **failover resilience** required by Article IX §7:
+  the pool MUST survive a database failover (e.g. an HA/Multi-AZ standby promotion) without manual
+  intervention. Two mechanisms cover it:
+  - **Liveness / recycling.** A new `DBConfig.ping_before_use` (default `True`) pings the acquired
+    connection before every query; a failed ping means a connection killed server-side (e.g. by a
+    failover) and it is discarded instead of handed to the caller. The existing `pool_recycle`
+    setting continues to recycle idle-but-stale connections by age — the two mechanisms complement
+    each other.
+  - **Transparent retry on a fresh connection.** `execute`/`fetch_all`/`fetch_one` now run through
+    `plugshub_common.resilience.retry_async` with a small, bounded backoff policy (reused, not
+    reinvented, per Article XVII §2/DRY) that retries **only** connection-level/transient errors —
+    `OSError` and, when `aiomysql` is installed, its `OperationalError`/`InterfaceError` — on a
+    freshly-acquired connection. Non-transient errors (syntax errors, constraint violations, ...)
+    are never in the retryable set and propagate immediately on the first attempt. A failover is a
+    brief reconnect blip, never a service restart.
+  - `DBPool.__init__` gained optional `retry_policy`, `transient_errors`, and `sleep` parameters so
+    services can tune backoff/attempts or fully fake the driver's error types in tests without a
+    real MySQL server.
+
 ## [0.4.0] - 2026-07-06
 
 ### Added
