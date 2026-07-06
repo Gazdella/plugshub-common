@@ -21,6 +21,7 @@ conformant service obtains these capabilities here and **MUST NOT** re-implement
 | `authz` | Deny-by-default permissions + object-level ownership checks | Article XIX |
 | `audit` | Append-only audit-trail writer | Article XX |
 | `featureflags` | Feature-flag / kill-switch client (in-memory, env, redis) | Article XXVI §4 |
+| `observability` | Optional, vendor-neutral error tracking (Sentry) — 5xx only, PII-scrubbed | Article IV §6 |
 | `canonical` | UTC RFC-3339 time + integer-minor-unit `Money` (ISO-4217) | Article XXIV |
 | `health` | Standard `/health` + `/ready` response shapes | Article VII |
 | `tenant` | Fail-closed tenant-id validator | Article IX §2/§6 |
@@ -30,18 +31,20 @@ conformant service obtains these capabilities here and **MUST NOT** re-implement
 Services depend on a **pinned, tagged release** (Article XVII §4), never a moving branch:
 
 ```
-plugshub-common @ git+https://github.com/Gazdella/plugshub-common.git@v0.3.0
+plugshub-common @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 ```
 
 The core install is light. Pull optional backends only where needed:
 
 ```
 # HTTP edge + inter-service client (FastAPI/Starlette + aiohttp)
-plugshub-common[http] @ git+https://github.com/Gazdella/plugshub-common.git@v0.3.0
+plugshub-common[http]   @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 # Shared async DB pool (aiomysql)
-plugshub-common[db]   @ git+https://github.com/Gazdella/plugshub-common.git@v0.3.0
+plugshub-common[db]     @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
+# Error tracking SDK (sentry-sdk) — only needed when a DSN is configured
+plugshub-common[sentry] @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 # Everything
-plugshub-common[all]  @ git+https://github.com/Gazdella/plugshub-common.git@v0.3.0
+plugshub-common[all]    @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 ```
 
 ## Usage
@@ -81,6 +84,16 @@ metrics = setup_http(app)                     # request context + global error h
 app.add_middleware(build_service_auth_middleware(INTERNAL_SERVICE_TOKEN))
 ```
 
+Initialize error tracking once at startup (safe no-op when `SENTRY_DSN` is unset):
+
+```python
+from plugshub_common import init_error_tracking
+
+# Reads SENTRY_DSN from the environment; no-op (returns False) when unset.
+init_error_tracking(environment="production", service=SERVICE_NAME)
+# Thereafter the global HTTP handler reports 5xx server faults only; 4xx are filtered (Article XVI §5).
+```
+
 ## Development
 
 ```
@@ -104,5 +117,8 @@ module docstring:
   and `EnvFeatureFlags` need nothing.
 - `http_middleware` — `RedMetrics` is an in-memory RED recorder; swap in a Prometheus/OTel recorder
   with the same `record` signature in production.
+- `observability` — vendor-neutral error-tracking wiring; the current backend is Sentry via the
+  lazy optional `sentry` extra. Uptime/synthetic monitoring (e.g. Better Stack) and log shipping are
+  external infrastructure, not code (Articles XXVIII §3, IV §1).
 
 This Constitution: see [`SAAS_CONSTITUTION.md`](../SAAS_CONSTITUTION.md) (Article XVII, Appendix A).

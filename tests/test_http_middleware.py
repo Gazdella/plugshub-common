@@ -115,3 +115,29 @@ def test_service_auth_middleware_fail_closed():
 
 def test_new_request_id_unique():
     assert new_request_id() != new_request_id()
+
+
+class _FakeSdk:
+    def __init__(self):
+        self.captured = []
+
+    def init(self, **kwargs):
+        pass
+
+    def capture_exception(self, exc):
+        self.captured.append(exc)
+
+
+def test_error_tracking_reports_5xx_not_4xx():
+    from plugshub_common.observability import init_error_tracking, reset_error_tracking
+
+    fake = _FakeSdk()
+    init_error_tracking(dsn="https://k@example.com/1", sdk=fake)
+    try:
+        app, _ = _build_app()
+        client = TestClient(app, raise_server_exceptions=False)
+        client.get("/api/v1/missing")  # 404 -> not reported
+        client.get("/api/v1/boom")     # 500 -> reported
+        assert len(fake.captured) == 1
+    finally:
+        reset_error_tracking()

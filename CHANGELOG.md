@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
+## [0.4.0] - 2026-07-06
+
+### Added
+
+- `observability` — optional, vendor-neutral **error-tracking** initializer satisfying Article IV §6.
+  `init_error_tracking()` initializes Sentry when a DSN is configured (arg or `SENTRY_DSN`) and is a
+  safe **no-op when unset**; `sentry-sdk` is a **lazy optional** dependency (the `sentry` extra) so
+  core `import plugshub_common` stays light and works without it installed. `capture_exception()`
+  reports only genuine **server faults (5xx)** — expected **4xx** client errors are filtered out
+  (Article XVI §5) — and a `before_send` hook scrubs secrets/PII via the shared masking helpers with
+  `send_default_pii` disabled (Article IV §4, XVI §4). Wired into the `http_middleware` global error
+  handler so unhandled faults are reported automatically. (Uptime/synthetic monitoring and log
+  shipping remain external infrastructure, not code — Articles XXVIII §3, IV §1.)
+
+### Changed
+
+- `http_middleware` — the global exception handler now reports server faults via `observability`.
+- `pyproject.toml` — added the `sentry` optional extra (`sentry-sdk`) and folded it into `all`.
+- `plugshub_common/__init__.py` / `README.md` — export and document the observability module.
+
 ## [0.3.0] - 2026-07-06
 
 ### Added
@@ -63,6 +83,7 @@ every cross-cutting capability from the shared library (Article XVII §1):
 - `health` — standard `/health` (liveness) and `/ready` (readiness) response shapes (Article VII).
 - Initial package scaffolding.
 
+[0.4.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.1.0

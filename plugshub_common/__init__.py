@@ -6,11 +6,10 @@ backends (FastAPI, aiomysql, aiohttp, redis) are optional extras and imported la
 ``import plugshub_common`` stays light.
 """
 
-# --- Health & tenancy (Articles VII, IX) ---
-# --- Audit trail (Article XX) ---
+# Audit trail (Article XX)
 from plugshub_common.audit import AuditRecord, AuditWriter, InMemoryAuditSink, LoggingAuditSink
 
-# --- Authorization (Article XIX) ---
+# Authorization (Article XIX)
 from plugshub_common.authz import (
     PermissionChecker,
     Principal,
@@ -19,13 +18,13 @@ from plugshub_common.authz import (
     require_permission,
 )
 
-# --- Canonical representation (Article XXIV) ---
+# Canonical representation (Article XXIV)
 from plugshub_common.canonical import Money, parse_rfc3339, to_rfc3339, utc_now
 
-# --- Configuration (Article III) ---
+# Configuration (Article III)
 from plugshub_common.config import BaseServiceSettings, ConfigError, load_settings
 
-# --- Errors & envelopes (Article V) ---
+# Errors & envelopes (Article V)
 from plugshub_common.errors import (
     ConflictError,
     DependencyUnavailableError,
@@ -43,15 +42,17 @@ from plugshub_common.errors import (
     success_envelope,
 )
 
-# --- Feature flags (Article XXVI §4) ---
+# Feature flags (Article XXVI §4)
 from plugshub_common.featureflags import (
     EnvFeatureFlags,
     FeatureFlagProvider,
     InMemoryFeatureFlags,
 )
+
+# Health (Article VII)
 from plugshub_common.health import liveness, readiness
 
-# --- Structured logging (Article IV) ---
+# Structured logging (Article IV)
 from plugshub_common.logging import (
     configure_logging,
     get_logger,
@@ -60,7 +61,7 @@ from plugshub_common.logging import (
     set_request_context,
 )
 
-# --- Messaging: outbox / idempotent consumer / DLQ (Article VIII §3) ---
+# Messaging: outbox / idempotent consumer / DLQ (Article VIII §3)
 from plugshub_common.messaging import (
     IdempotentConsumer,
     InMemoryDeadLetterQueue,
@@ -69,7 +70,14 @@ from plugshub_common.messaging import (
     event_envelope,
 )
 
-# --- Resilience (Articles VIII §1, XXVI §3) ---
+# Error tracking / observability (Article IV §6)
+from plugshub_common.observability import (
+    capture_exception,
+    init_error_tracking,
+    is_error_tracking_enabled,
+)
+
+# Resilience (Articles VIII §1, XXVI §3)
 from plugshub_common.resilience import (
     CircuitBreaker,
     CircuitBreakerOpen,
@@ -78,7 +86,7 @@ from plugshub_common.resilience import (
     retry_async,
 )
 
-# --- Service-to-service auth (Article VIII §2) ---
+# Service-to-service auth (Article VIII §2)
 from plugshub_common.service_auth import (
     INTERNAL_TOKEN_HEADER,
     REQUEST_ID_HEADER,
@@ -86,9 +94,11 @@ from plugshub_common.service_auth import (
     require_service_token,
     verify_service_token,
 )
+
+# Tenancy (Article IX)
 from plugshub_common.tenant import validate_tenant
 
-# --- Validation (Article VI §5) ---
+# Validation (Article VI §5)
 from plugshub_common.validation import parse_json_body, validate_model
 
 __all__ = [
@@ -150,6 +160,10 @@ __all__ = [
     "FeatureFlagProvider",
     "InMemoryFeatureFlags",
     "EnvFeatureFlags",
+    # error tracking / observability
+    "init_error_tracking",
+    "capture_exception",
+    "is_error_tracking_enabled",
     # service auth
     "INTERNAL_TOKEN_HEADER",
     "REQUEST_ID_HEADER",
@@ -164,4 +178,4 @@ __all__ = [
     "InMemoryDeadLetterQueue",
 ]
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"

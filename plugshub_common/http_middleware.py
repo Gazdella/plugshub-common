@@ -26,6 +26,7 @@ from plugshub_common.logging import (
     new_request_id,
     set_request_context,
 )
+from plugshub_common.observability import capture_exception
 from plugshub_common.service_auth import REQUEST_ID_HEADER, TENANT_ID_HEADER
 
 __all__ = [
@@ -124,6 +125,8 @@ def install_exception_handlers(app: Any) -> None:
 
     async def _handle_plugshub_error(request: "Request", exc: PlugsHubError) -> Any:
         request_id = _request_id(request)
+        # Report only genuine server faults (5xx); 4xx client errors are filtered out (XVI §5).
+        capture_exception(exc)
         response = JSONResponse(
             exc.to_envelope(request_id), status_code=exc.http_status
         )
@@ -134,6 +137,8 @@ def install_exception_handlers(app: Any) -> None:
 
     async def _handle_unexpected(request: "Request", exc: Exception) -> Any:
         request_id = _request_id(request)
+        # Unhandled exceptions are 5xx server faults — report to the error tracker (Article IV §6).
+        capture_exception(exc)
         response = JSONResponse(
             error_from_exception(exc, request_id), status_code=500
         )
