@@ -76,6 +76,10 @@ class DBConfig:
     autocommit: bool = True
     pool_recycle: int = 3600
     ping_before_use: bool = True
+    # utf8mb4 is required for emoji / full Unicode in tenant data. Without an
+    # explicit charset aiomysql defaults to utf8 (mb3) — silent truncation risk.
+    charset: str = "utf8mb4"
+    use_unicode: bool = True
 
 
 class DBPool:
@@ -137,7 +141,14 @@ class DBPool:
             maxsize=cfg.maxsize,
             autocommit=cfg.autocommit,
             pool_recycle=cfg.pool_recycle,
+            charset=cfg.charset,
+            use_unicode=cfg.use_unicode,
         )
+
+    @property
+    def raw_pool(self) -> Any:
+        """Underlying driver pool for callers that need ``acquire()`` directly."""
+        return self._pool
 
     async def stop(self) -> None:
         """Close the pool cleanly on shutdown (Article XII §6)."""

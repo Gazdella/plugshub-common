@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plugshub-common"
-version = "0.4.1"
+version = "0.4.2"
 description = "Shared fleet helpers (SaaS Constitution Appendix A) — config, logging, errors, HTTP middleware, service auth, DB pool + tenant resolver, resilience, clients, messaging, validation, authorization, audit, feature flags, and canonical time/money. Byte-identical across every service."
 requires-python = ">=3.9"
 authors = [{ name = "Da-tene" }]

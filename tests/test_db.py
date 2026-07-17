@@ -297,3 +297,11 @@ async def test_ping_before_use_can_be_disabled():
 
     assert result == (7,)
     assert pool_backend.acquire_count == 1
+
+
+def test_dbconfig_defaults_utf8mb4():
+    from plugshub_common.db import DBConfig
+
+    cfg = DBConfig(host="h")
+    assert cfg.charset == "utf8mb4"
+    assert cfg.use_unicode is True

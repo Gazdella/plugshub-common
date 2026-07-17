@@ -92,6 +92,7 @@ class ServiceClient:
         timeout_policy: Optional[TimeoutPolicy] = None,
         breaker: Optional[CircuitBreaker] = None,
         session: Any = None,
+        trip_on_5xx: bool = True,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._token = internal_token
@@ -99,6 +100,10 @@ class ServiceClient:
         self._timeout = timeout_policy or TimeoutPolicy()
         self._breaker = breaker or CircuitBreaker(name=self.base_url or "service")
         self._session = session
+        # When False, HTTP 5xx is returned as a normal HttpResponse (status only)
+        # and does NOT trip the breaker — only transport errors do. Some callers
+        # (e.g. ocpp→session-service) treat 5xx as a soft downstream failure.
+        self._trip_on_5xx = trip_on_5xx
 
     async def start(self) -> None:
         """Open the pooled ``aiohttp`` session (idempotent). Requires the ``http`` extra."""
@@ -136,7 +141,7 @@ class ServiceClient:
         ) as resp:
             body = await resp.text()
             status = int(resp.status)
-            if status >= 500:
+            if self._trip_on_5xx and status >= 500:
                 raise TransientHTTPError("{} returned {}".format(url, status))
             return HttpResponse(status=status, headers=dict(resp.headers), body=body)
 
