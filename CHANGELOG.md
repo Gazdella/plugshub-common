@@ -6,6 +6,43 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
+## [0.4.3] - 2026-08-13
+
+### Security
+
+- `service_auth` — **`verify_service_token` raised `TypeError` on a non-ASCII token instead of
+  rejecting it.** `hmac.compare_digest` refuses a `str` containing a non-ASCII character, and
+  Starlette latin-1-decodes header values, so a single high byte in `X-Internal-Service-Token`
+  became an unhandled exception rather than a failed comparison — a 500 reachable by an
+  **unauthenticated** caller on every service using this. `require_service_token` and
+  `build_service_auth_middleware` both route through the same line, so the whole fleet was
+  exposed. Both operands are now encoded to bytes before comparison, with `surrogatepass`
+  because a latin-1 decode of arbitrary bytes can produce lone surrogates that plain UTF-8
+  encoding also rejects. A wrong token returns `False`; an identical non-ASCII secret still
+  matches, so a deployment whose shared secret contains one keeps authenticating.
+
+### Added
+
+- `preauth` — one park-key builder for the terminal pre-auth contract, replacing two
+  independent format strings in terminal-service and session-service (Article XVII §2). If
+  those ever diverged nothing would error: the park would simply not be found, the session
+  would be classified as ordinary, and the charger would run uncapped against a card hold
+  already taken. `connector_id` is stringified inside the builder rather than at each call
+  site — terminal-service holds it as an `int`, session-service receives it from ocpp where
+  it can arrive as a string, which is exactly the detail two implementations get subtly
+  wrong. The key stays positional so a fresh pre-auth overwrites an abandoned one.
+
+## [0.4.2] - 2026-08-12
+
+Released without a changelog entry; recorded here retroactively from the tag (Article XIV §3).
+
+### Added
+
+- `db` — `DBConfig.charset` / `use_unicode`, so a service can select `utf8mb4` and adopt the
+  shared pool without silent mb3 truncation.
+- `clients` — `ServiceClient(trip_on_5xx=...)`, letting a caller keep the circuit breaker
+  closed on HTTP 5xx so only transport failures trip it.
+
 ## [0.4.1] - 2026-07-06
 
 ### Fixed
@@ -106,6 +143,9 @@ every cross-cutting capability from the shared library (Article XVII §1):
 - `health` — standard `/health` (liveness) and `/ready` (readiness) response shapes (Article VII).
 - Initial package scaffolding.
 
+[0.4.3]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.3
+[0.4.2]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.2
+[0.4.1]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.2.0
