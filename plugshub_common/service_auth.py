@@ -43,7 +43,16 @@ def verify_service_token(provided: Optional[str], expected: str) -> bool:
     """
     if not provided or not expected:
         return False
-    return hmac.compare_digest(str(provided), str(expected))
+    # Encoded to bytes first. `hmac.compare_digest` raises TypeError when given a `str`
+    # containing a non-ASCII character, and Starlette latin-1-decodes header values — so
+    # comparing the raw strings turned a single high byte in the token header into an
+    # unhandled TypeError, i.e. a 500 an UNAUTHENTICATED caller could trigger on any
+    # service using this. `surrogatepass` because a latin-1 decode can produce lone
+    # surrogates that plain UTF-8 encoding also rejects.
+    return hmac.compare_digest(
+        str(provided).encode("utf-8", "surrogatepass"),
+        str(expected).encode("utf-8", "surrogatepass"),
+    )
 
 
 def is_public_path(path: str, public_paths: Iterable[str] = DEFAULT_PUBLIC_PATHS) -> bool:
