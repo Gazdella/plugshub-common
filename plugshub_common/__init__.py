@@ -9,6 +9,9 @@ backends (FastAPI, aiomysql, aiohttp, redis) are optional extras and imported la
 # Audit trail (Article XX)
 from plugshub_common.audit import AuditRecord, AuditWriter, InMemoryAuditSink, LoggingAuditSink
 
+# The terminal pre-auth park (Article VIII §4 — a cross-service contract)
+from plugshub_common.preauth import PREAUTH_KEY_TEMPLATE, preauth_key
+
 # Authorization (Article XIX)
 from plugshub_common.authz import (
     PermissionChecker,
@@ -102,80 +105,82 @@ from plugshub_common.tenant import validate_tenant
 from plugshub_common.validation import parse_json_body, validate_model
 
 __all__ = [
-    # health & tenancy
-    "liveness",
-    "readiness",
-    "validate_tenant",
-    # errors
-    "PlugsHubError",
-    "InvalidBodyError",
-    "ValidationFailedError",
-    "UnauthorizedError",
-    "ForbiddenError",
-    "NotFoundError",
-    "ConflictError",
-    "PreconditionFailedError",
-    "RateLimitedError",
-    "DependencyUnavailableError",
-    "InternalError",
-    "error_envelope",
-    "success_envelope",
-    "error_from_exception",
-    # canonical
-    "utc_now",
-    "to_rfc3339",
-    "parse_rfc3339",
-    "Money",
-    # logging
-    "configure_logging",
-    "get_logger",
-    "set_request_context",
-    "mask",
-    "mask_mapping",
-    # config
-    "BaseServiceSettings",
-    "load_settings",
-    "ConfigError",
-    # resilience
-    "RetryPolicy",
-    "TimeoutPolicy",
-    "CircuitBreaker",
-    "CircuitBreakerOpen",
-    "retry_async",
-    # validation
-    "parse_json_body",
-    "validate_model",
-    # authz
-    "Principal",
-    "principal_from_claims",
-    "require_permission",
-    "check_object_ownership",
-    "PermissionChecker",
     # audit
+    # authz
+    # canonical
+    # config
+    # error tracking / observability
+    # errors
+    # feature flags
+    # health & tenancy
+    # logging
+    # messaging
+    # resilience
+    # service auth
+    # validation
     "AuditRecord",
     "AuditWriter",
-    "InMemoryAuditSink",
-    "LoggingAuditSink",
-    # feature flags
-    "FeatureFlagProvider",
-    "InMemoryFeatureFlags",
-    "EnvFeatureFlags",
-    # error tracking / observability
-    "init_error_tracking",
+    "BaseServiceSettings",
     "capture_exception",
-    "is_error_tracking_enabled",
-    # service auth
-    "INTERNAL_TOKEN_HEADER",
-    "REQUEST_ID_HEADER",
-    "TENANT_ID_HEADER",
-    "verify_service_token",
-    "require_service_token",
-    # messaging
+    "check_object_ownership",
+    "CircuitBreaker",
+    "CircuitBreakerOpen",
+    "ConfigError",
+    "configure_logging",
+    "ConflictError",
+    "DependencyUnavailableError",
+    "EnvFeatureFlags",
+    "error_envelope",
+    "error_from_exception",
     "event_envelope",
-    "InMemoryOutbox",
-    "OutboxRelay",
+    "FeatureFlagProvider",
+    "ForbiddenError",
+    "get_logger",
     "IdempotentConsumer",
+    "init_error_tracking",
+    "InMemoryAuditSink",
     "InMemoryDeadLetterQueue",
+    "InMemoryFeatureFlags",
+    "InMemoryOutbox",
+    "INTERNAL_TOKEN_HEADER",
+    "InternalError",
+    "InvalidBodyError",
+    "is_error_tracking_enabled",
+    "liveness",
+    "load_settings",
+    "LoggingAuditSink",
+    "mask",
+    "mask_mapping",
+    "Money",
+    "NotFoundError",
+    "OutboxRelay",
+    "parse_json_body",
+    "parse_rfc3339",
+    "PermissionChecker",
+    "PlugsHubError",
+    "preauth_key",
+    "PREAUTH_KEY_TEMPLATE",
+    "PreconditionFailedError",
+    "Principal",
+    "principal_from_claims",
+    "RateLimitedError",
+    "readiness",
+    "REQUEST_ID_HEADER",
+    "require_permission",
+    "require_service_token",
+    "retry_async",
+    "RetryPolicy",
+    "set_request_context",
+    "success_envelope",
+    "TENANT_ID_HEADER",
+    "TimeoutPolicy",
+    "to_rfc3339",
+    "UnauthorizedError",
+    "utc_now",
+    "validate_model",
+    "validate_tenant",
+    "ValidationFailedError",
+    "verify_service_token",
 ]
 
 __version__ = "0.4.1"
