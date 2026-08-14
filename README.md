@@ -21,7 +21,7 @@ conformant service obtains these capabilities here and **MUST NOT** re-implement
 | `authz` | Deny-by-default permissions + object-level ownership checks | Article XIX |
 | `audit` | Append-only audit-trail writer | Article XX |
 | `featureflags` | Feature-flag / kill-switch client (in-memory, env, redis) | Article XXVI §4 |
-| `observability` | Optional, vendor-neutral error tracking (Sentry) — 5xx only, PII-scrubbed | Article IV §6 |
+| `observability` | Error tracking on the Better Stack log path — 5xx only, PII-scrubbed | Article IV §6 |
 | `canonical` | UTC RFC-3339 time + integer-minor-unit `Money` (ISO-4217) | Article XXIV |
 | `health` | Standard `/health` + `/ready` response shapes | Article VII |
 | `tenant` | Fail-closed tenant-id validator | Article IX §2/§6 |
@@ -41,8 +41,6 @@ The core install is light. Pull optional backends only where needed:
 plugshub-common[http]   @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 # Shared async DB pool (aiomysql)
 plugshub-common[db]     @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
-# Error tracking SDK (sentry-sdk) — only needed when a DSN is configured
-plugshub-common[sentry] @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 # Everything
 plugshub-common[all]    @ git+https://github.com/Gazdella/plugshub-common.git@v0.4.0
 ```
@@ -84,12 +82,13 @@ metrics = setup_http(app)                     # request context + global error h
 app.add_middleware(build_service_auth_middleware(INTERNAL_SERVICE_TOKEN))
 ```
 
-Initialize error tracking once at startup (safe no-op when `SENTRY_DSN` is unset):
+Stamp the error-tracking tags once at startup. There is nothing to arm — faults are reported on the
+service's log stream, which the host Vector agent ships to Better Stack:
 
 ```python
 from plugshub_common import init_error_tracking
 
-# Reads SENTRY_DSN from the environment; no-op (returns False) when unset.
+# Optional: tags every reported fault with service/environment/release. Capture works without it.
 init_error_tracking(environment="production", service=SERVICE_NAME)
 # Thereafter the global HTTP handler reports 5xx server faults only; 4xx are filtered (Article XVI §5).
 ```
@@ -117,8 +116,9 @@ module docstring:
   and `EnvFeatureFlags` need nothing.
 - `http_middleware` — `RedMetrics` is an in-memory RED recorder; swap in a Prometheus/OTel recorder
   with the same `record` signature in production.
-- `observability` — vendor-neutral error-tracking wiring; the current backend is Sentry via the
-  lazy optional `sentry` extra. Uptime/synthetic monitoring (e.g. Better Stack) and log shipping are
-  external infrastructure, not code (Articles XXVIII §3, IV §1).
+- `observability` — error-tracking wiring with no vendor client: a reported fault becomes a scrubbed,
+  correlated `ERROR` log record and an exception on the active OTLP span. Getting those records to
+  **Better Stack** (the host Vector agent, the per-service Source) and uptime/synthetic monitoring
+  are external infrastructure, not code (Articles XXVIII §3/§7, IV §1).
 
 This Constitution: see [`SAAS_CONSTITUTION.md`](../SAAS_CONSTITUTION.md) (Article XVII, Appendix A).

@@ -117,27 +117,26 @@ def test_new_request_id_unique():
     assert new_request_id() != new_request_id()
 
 
-class _FakeSdk:
-    def __init__(self):
-        self.captured = []
+def test_error_tracking_reports_5xx_not_4xx(caplog):
+    """The global handler must put a 500's traceback in the log stream Vector ships to Better Stack.
 
-    def init(self, **kwargs):
-        pass
+    The envelope it returns is deliberately opaque (Article V §2), so this ERROR record is the only
+    server-side trace of the fault — and a 404 must not produce one (Article XVI §5).
+    """
+    import logging
 
-    def capture_exception(self, exc):
-        self.captured.append(exc)
+    from plugshub_common.observability import reset_error_tracking
 
-
-def test_error_tracking_reports_5xx_not_4xx():
-    from plugshub_common.observability import init_error_tracking, reset_error_tracking
-
-    fake = _FakeSdk()
-    init_error_tracking(dsn="https://k@example.com/1", sdk=fake)
+    reset_error_tracking()
     try:
         app, _ = _build_app()
         client = TestClient(app, raise_server_exceptions=False)
-        client.get("/api/v1/missing")  # 404 -> not reported
-        client.get("/api/v1/boom")     # 500 -> reported
-        assert len(fake.captured) == 1
+        with caplog.at_level(logging.ERROR, logger="plugshub.server_fault"):
+            client.get("/api/v1/missing")  # 404 -> not reported
+            client.get("/api/v1/boom")     # 500 -> reported
+
+        records = [r for r in caplog.records if r.name == "plugshub.server_fault"]
+        assert len(records) == 1
+        assert records[0].exc_info is not None
     finally:
         reset_error_tracking()

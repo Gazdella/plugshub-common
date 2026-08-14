@@ -6,6 +6,39 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
+## [0.5.0] - 2026-08-14
+
+### Changed
+
+- **BREAKING — `observability` now reports faults to Better Stack instead of Sentry.** The fleet's
+  error destination is Better Stack, reached by shipping a service's structured `ERROR` lines
+  off-host with Vector (Article XXVIII §7); no Sentry project, DSN, or account has ever existed.
+  Keeping a Sentry SDK behind a DSN check meant Article IV §6 was satisfied only on paper: with no
+  DSN anywhere in the fleet, `capture_exception` returned immediately, so the `http_middleware`
+  global handler rendered an opaque 500 (Article V §2) and the traceback was written **nowhere**. A
+  server fault could reach a client and leave no server-side record at all.
+
+  `capture_exception` now always reports: it emits a scrubbed, correlated `ERROR` record with
+  `exc_info` on the dedicated `plugshub.server_fault` logger and records the exception on the active
+  OTLP span (`record_exception` + `ERROR` status). It gained an optional `context` mapping for
+  structured fields, masked with the shared helpers so a caller cannot leak a credential or PII by
+  attaching a request payload. Keys colliding with built-in `LogRecord` attributes are prefixed
+  rather than passed through, so context can never turn a fault report into a second exception.
+
+  `init_error_tracking()` is now **optional and keyword-only** — it registers the
+  `service`/`environment`/`release` tags stamped onto every report and returns `True`. The `dsn` and
+  `sdk` parameters are gone, as is the `RuntimeError` raised when a DSN was set without the SDK
+  installed. `is_error_tracking_enabled()` is retained for `/ready` and now always returns `True`:
+  the destination is the log stream, so there is no credential to arm and no "wired but dormant"
+  state to report.
+
+  **Migration:** drop the `[sentry]` extra and any `SENTRY_DSN`/`SENTRY_ENABLED` variable; replace
+  `init_error_tracking(dsn, environment=..., release=..., service=...)` with
+  `init_error_tracking(environment=..., release=..., service=...)`, or delete the call entirely
+  since capture no longer depends on it.
+- `pyproject.toml` — **removed the `sentry` optional extra** and dropped `sentry-sdk` from `all`.
+  Error tracking now needs no extra at all.
+
 ## [0.4.3] - 2026-08-13
 
 ### Security
