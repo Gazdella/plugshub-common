@@ -1,4 +1,5 @@
 import importlib.util
+import logging
 
 import pytest
 
@@ -12,28 +13,11 @@ from plugshub_common.observability import (
     should_report,
 )
 
-
-class _FakeSdk:
-    def __init__(self):
-        self.init_kwargs = None
-        self.before_send = None
-        self.captured = []
-        self.tags = {}
-
-    def init(self, **kwargs):
-        self.init_kwargs = kwargs
-        self.before_send = kwargs.get("before_send")
-
-    def capture_exception(self, exc):
-        self.captured.append(exc)
-
-    def set_tag(self, key, value):
-        self.tags[key] = value
+FAULT_LOGGER = "plugshub.server_fault"
 
 
 @pytest.fixture(autouse=True)
-def _clean_state(monkeypatch):
-    monkeypatch.delenv("SENTRY_DSN", raising=False)
+def _clean_state():
     reset_error_tracking()
     clear_request_context()
     yield
@@ -41,47 +25,22 @@ def _clean_state(monkeypatch):
     clear_request_context()
 
 
-def test_sentry_sdk_is_optional_and_not_required_for_import():
-    # The whole point: core import works without the SDK installed.
+def test_no_error_tracking_sdk_is_installed():
+    """The error destination is the log stream, so no vendor client is a dependency at all."""
     assert importlib.util.find_spec("sentry_sdk") is None
     import plugshub_common  # noqa: F401
 
 
-def test_no_dsn_is_safe_noop():
-    assert init_error_tracking() is False
-    assert is_error_tracking_enabled() is False
-    # capture is a no-op when disabled
-    assert capture_exception(RuntimeError("boom")) is False
+def test_capture_works_without_init():
+    """Nothing has to be armed: there is no DSN, so §6 cannot be 'wired but dormant'."""
+    assert is_error_tracking_enabled() is True
+    assert capture_exception(RuntimeError("boom")) is True
 
 
-def test_no_dsn_noop_without_sdk_installed():
-    # Even though sentry-sdk is absent, the unset-DSN path must not try to import it.
-    assert init_error_tracking(dsn=None) is False
-
-
-def test_dsn_without_sdk_raises_clear_hint():
-    with pytest.raises(RuntimeError) as ei:
-        init_error_tracking(dsn="https://x@example.com/1")
-    assert "sentry-sdk" in str(ei.value)
-
-
-def test_init_path_with_injected_sdk():
-    fake = _FakeSdk()
-    ok = init_error_tracking(
-        dsn="https://k@example.com/42", environment="prod", service="svc", sdk=fake
-    )
-    assert ok is True and is_error_tracking_enabled() is True
-    assert fake.init_kwargs["dsn"] == "https://k@example.com/42"
-    assert fake.init_kwargs["send_default_pii"] is False
-    assert callable(fake.init_kwargs["before_send"])
-    assert fake.tags.get("service") == "svc"
-
-
-def test_dsn_read_from_env(monkeypatch):
-    monkeypatch.setenv("SENTRY_DSN", "https://env@example.com/7")
-    fake = _FakeSdk()
-    assert init_error_tracking(sdk=fake) is True
-    assert fake.init_kwargs["dsn"] == "https://env@example.com/7"
+def test_init_is_idempotent_and_always_enabled():
+    assert init_error_tracking() is True
+    assert init_error_tracking(service="svc", environment="prod", release="1.2.3") is True
+    assert is_error_tracking_enabled() is True
 
 
 def test_should_report_filters_4xx():
@@ -92,35 +51,81 @@ def test_should_report_filters_4xx():
     assert should_report(PlugsHubError("x", http_status=503)) is True
 
 
-def test_capture_reports_server_faults_only():
-    fake = _FakeSdk()
-    init_error_tracking(dsn="https://k@example.com/1", sdk=fake)
+def test_capture_reports_server_faults_only(caplog):
+    """A 5xx becomes exactly one ERROR record for Vector to ship; a 4xx becomes none."""
+    with caplog.at_level(logging.ERROR, logger=FAULT_LOGGER):
+        assert capture_exception(RuntimeError("server boom")) is True
+        assert capture_exception(InternalError("db down")) is True
+        # 4xx client errors are never reported (Article XVI §5)
+        assert capture_exception(NotFoundError("missing")) is False
+        assert capture_exception(InvalidBodyError("empty")) is False
 
-    assert capture_exception(RuntimeError("server boom")) is True
-    assert capture_exception(InternalError("db down")) is True
-    # 4xx client errors are never sent (Article XVI §5)
-    assert capture_exception(NotFoundError("missing")) is False
-    assert capture_exception(InvalidBodyError("empty")) is False
-
-    assert len(fake.captured) == 2
+    records = [r for r in caplog.records if r.name == FAULT_LOGGER]
+    assert len(records) == 2
+    assert [r.levelno for r in records] == [logging.ERROR, logging.ERROR]
 
 
-def test_before_send_scrubs_and_tags():
-    fake = _FakeSdk()
-    init_error_tracking(dsn="https://k@example.com/1", sdk=fake)
+def test_report_carries_the_traceback(caplog):
+    """Without exc_info the log line names the fault but cannot be debugged from."""
+    with caplog.at_level(logging.ERROR, logger=FAULT_LOGGER):
+        try:
+            raise RuntimeError("boom")
+        except RuntimeError as exc:
+            capture_exception(exc)
+
+    record = next(r for r in caplog.records if r.name == FAULT_LOGGER)
+    assert record.exc_info is not None
+    assert record.exc_info[0] is RuntimeError
+    assert "RuntimeError" in record.getMessage()
+
+
+def test_report_is_correlated_and_tagged(caplog):
+    init_error_tracking(service="svc", environment="prod", release="1.2.3")
     set_request_context(request_id="req-77", tenant_id="tenant-x")
 
-    event = {
-        "message": "boom",
-        "request": {
-            "headers": {"Authorization": "Bearer abc", "User-Agent": "curl"},
-            "data": {"password": "hunter2", "keep": "ok"},
-        },
-    }
-    scrubbed = fake.before_send(event, {})
-    assert scrubbed["request"]["headers"]["Authorization"] == "***"
-    assert scrubbed["request"]["headers"]["User-Agent"] == "curl"
-    assert scrubbed["request"]["data"]["password"] == "***"
-    assert scrubbed["request"]["data"]["keep"] == "ok"
-    assert scrubbed["tags"]["request_id"] == "req-77"
-    assert scrubbed["tags"]["tenant_id"] == "tenant-x"
+    with caplog.at_level(logging.ERROR, logger=FAULT_LOGGER):
+        capture_exception(InternalError("db down"))
+
+    record = next(r for r in caplog.records if r.name == FAULT_LOGGER)
+    assert record.tags["request_id"] == "req-77"
+    assert record.tags["tenant_id"] == "tenant-x"
+    assert record.tags["service"] == "svc"
+    assert record.tags["environment"] == "prod"
+    assert record.tags["release"] == "1.2.3"
+    assert record.exception_type == "InternalError"
+    assert record.fault == "server"
+
+
+def test_attached_context_is_masked(caplog):
+    """A caller attaching a request payload must not be able to leak a secret into the logs."""
+    init_error_tracking(extra_sensitive_keys=["x-tenant-secret"])
+
+    with caplog.at_level(logging.ERROR, logger=FAULT_LOGGER):
+        capture_exception(
+            InternalError("db down"),
+            {
+                "route": "/api/v1/sessions",
+                "headers": {"Authorization": "Bearer abc", "User-Agent": "curl"},
+                "body": {"password": "hunter2", "keep": "ok"},
+                "x-tenant-secret": "s3cret",
+            },
+        )
+
+    record = next(r for r in caplog.records if r.name == FAULT_LOGGER)
+    assert record.route == "/api/v1/sessions"
+    assert record.headers["Authorization"] == "***"
+    assert record.headers["User-Agent"] == "curl"
+    assert record.body["password"] == "***"
+    assert record.body["keep"] == "ok"
+    assert getattr(record, "x-tenant-secret") == "***"
+
+
+def test_reset_clears_the_static_tags(caplog):
+    init_error_tracking(service="svc")
+    reset_error_tracking()
+
+    with caplog.at_level(logging.ERROR, logger=FAULT_LOGGER):
+        capture_exception(InternalError("db down"))
+
+    record = next(r for r in caplog.records if r.name == FAULT_LOGGER)
+    assert "service" not in record.tags
