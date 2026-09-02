@@ -8,9 +8,10 @@ the wrong conclusion on 2026-09-02, mid-incident.
 """
 
 import re
-import tomllib
 from importlib.metadata import version as pkg_version
 from pathlib import Path
+
+import tomllib
 
 import plugshub_common
 
