@@ -119,7 +119,7 @@ def init_error_tracking(
             ) from exc
 
     keys = frozenset(extra_sensitive_keys) if extra_sensitive_keys else frozenset()
-    _state.extra_sensitive_keys = (SENSITIVE_KEYS | _EXTRA_SENSITIVE | keys)
+    _state.extra_sensitive_keys = SENSITIVE_KEYS | _EXTRA_SENSITIVE | keys
     scrub_keys = _state.extra_sensitive_keys
 
     def before_send(event: Dict[str, Any], hint: Optional[Dict[str, Any]] = None) -> Any:

@@ -94,9 +94,7 @@ async def test_4xx_not_retried():
 
 async def test_5xx_not_trip_when_disabled():
     session = _FakeSession([_FakeResp(503, '{"error":"x"}')])
-    client = ServiceClient(
-        "http://svc", "tok", session=session, trip_on_5xx=False
-    )
+    client = ServiceClient("http://svc", "tok", session=session, trip_on_5xx=False)
     resp = await client.get("/x")
     assert resp.status == 503
     assert len(session.calls) == 1

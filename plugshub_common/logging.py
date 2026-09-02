@@ -36,6 +36,7 @@ def new_request_id() -> str:
     """Generate a fresh correlation id when the caller supplied none (Article V §6)."""
     return uuid.uuid4().hex
 
+
 # Contextvars carry per-request correlation without threading it through every call (Article IV §2).
 _request_id: ContextVar[Optional[str]] = ContextVar("plugshub_request_id", default=None)
 _tenant_id: ContextVar[Optional[str]] = ContextVar("plugshub_tenant_id", default=None)
@@ -68,14 +69,10 @@ SENSITIVE_KEYS = frozenset(
 )
 
 # The reserved slots on a ``LogRecord`` — anything else the caller passed via ``extra`` is a field.
-_RESERVED = frozenset(
-    vars(logging.makeLogRecord({})).keys()
-) | {"message", "asctime", "taskName"}
+_RESERVED = frozenset(vars(logging.makeLogRecord({})).keys()) | {"message", "asctime", "taskName"}
 
 
-def set_request_context(
-    request_id: Optional[str] = None, tenant_id: Optional[str] = None
-) -> None:
+def set_request_context(request_id: Optional[str] = None, tenant_id: Optional[str] = None) -> None:
     """Bind the correlation id + tenant for the current context (Article IV §2/§5)."""
     if request_id is not None:
         _request_id.set(request_id)
@@ -172,9 +169,7 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(payload, default=str, ensure_ascii=False)
 
 
-def configure_logging(
-    service: str, level: str = "INFO", stream: Any = None
-) -> logging.Logger:
+def configure_logging(service: str, level: str = "INFO", stream: Any = None) -> logging.Logger:
     """Install the JSON formatter on the root logger and return the service logger (Article IV §1).
 
     Idempotent: replaces any existing handler so repeated calls do not double-log. ``level`` follows

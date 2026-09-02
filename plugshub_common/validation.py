@@ -74,6 +74,4 @@ def validate_model(model_cls: Type[T], data: Any) -> T:
         validator = getattr(model_cls, "model_validate", None) or model_cls.parse_obj
         return validator(data)  # type: ignore[no-any-return]
     except ValidationError as exc:
-        raise ValidationFailedError(
-            "input validation failed", details=field_errors(exc)
-        ) from exc
+        raise ValidationFailedError("input validation failed", details=field_errors(exc)) from exc

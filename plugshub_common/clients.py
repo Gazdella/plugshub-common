@@ -115,9 +115,7 @@ class ServiceClient:
             raise RuntimeError(
                 "aiohttp is required for plugshub_common.clients; install plugshub-common[http]"
             ) from exc
-        timeout = aiohttp.ClientTimeout(
-            total=self._timeout.total, connect=self._timeout.connect
-        )
+        timeout = aiohttp.ClientTimeout(total=self._timeout.total, connect=self._timeout.connect)
         self._session = aiohttp.ClientSession(timeout=timeout)
 
     async def stop(self) -> None:
