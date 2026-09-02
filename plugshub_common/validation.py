@@ -10,7 +10,7 @@ surfaced in ``details`` (Article V §5) without leaking internals.
 """
 
 import json
-from typing import Any, Dict, Type, TypeVar
+from typing import Any, Dict, Type, TypeVar, cast
 
 from plugshub_common.errors import InvalidBodyError, ValidationFailedError
 
@@ -71,7 +71,12 @@ def validate_model(model_cls: Type[T], data: Any) -> T:
 
     try:
         # pydantic v2 uses ``model_validate``; v1 uses ``parse_obj``.
-        validator = getattr(model_cls, "model_validate", None) or model_cls.parse_obj
-        return validator(data)  # type: ignore[no-any-return]
+        # ruff B009 forbids getattr with a constant name; mypy rejects the direct
+        # attribute because pydantic v2 genuinely has no `parse_obj`. Both are right,
+        # so the access is direct and the impossibility is declared, narrowly.
+        validator = (
+            getattr(model_cls, "model_validate", None) or model_cls.parse_obj  # type: ignore[attr-defined]
+        )
+        return cast("T", validator(data))
     except ValidationError as exc:
         raise ValidationFailedError("input validation failed", details=field_errors(exc)) from exc

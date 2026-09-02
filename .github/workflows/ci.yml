@@ -1,0 +1,75 @@
+name: CI
+
+# Constitution Article XI — automated checks on every push/PR.
+#
+# This repository had NO CI at all. That is the wrong place in the fleet to have
+# none: every service depends on this package, so a defect here propagates to all
+# of them, and the eight consumers pin by tag — meaning a bad tag is installed
+# everywhere before anyone notices. Two things were already broken on main when
+# this was added, both invisible without a gate: two ruff errors, and a test that
+# imported `tomllib` and so could not run on the 3.9 floor the package promises.
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  lint:
+    name: lint / format / types (Article XI)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      # Source-only tools: ruff never imports the code, and mypy runs with
+      # ignore_missing_imports (pyproject), so the runtime extras are not needed.
+      - name: Install tooling
+        run: pip install ".[dev]"
+      - name: ruff (lint)
+        run: ruff check .
+      - name: ruff (format check)
+        run: ruff format --check .
+      - name: mypy (types)
+        run: mypy plugshub_common
+
+  test:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 is the floor `requires-python` promises, and it is tested rather
+        # than assumed — the claim was already false once. 3.11 and 3.12 are what
+        # the fleet actually runs (ocpp/terminal on 3.11, ocpi on 3.12), so a
+        # regression that only bites production is caught here too.
+        python-version: ["3.9", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install with every extra
+        # All extras: the middleware, DB, redis and messaging code paths each have
+        # tests, and installing a subset silently skips them.
+        run: pip install ".[dev,http,db,redis,messaging]"
+      - name: Run the suite
+        run: pytest -q
+
+  version-consistency:
+    name: version metadata is consistent
+    runs-on: ubuntu-latest
+    # Its own job so the failure names itself. __version__ was hardcoded and sat
+    # at 0.4.1 through three releases, which misled a fleet audit mid-incident.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install
+        run: pip install ".[dev]"
+      - name: __version__ must match the packaging metadata
+        run: pytest tests/test_version.py -q
