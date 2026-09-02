@@ -9,9 +9,6 @@ backends (FastAPI, aiomysql, aiohttp, redis) are optional extras and imported la
 # Audit trail (Article XX)
 from plugshub_common.audit import AuditRecord, AuditWriter, InMemoryAuditSink, LoggingAuditSink
 
-# The terminal pre-auth park (Article VIII §4 — a cross-service contract)
-from plugshub_common.preauth import PREAUTH_KEY_TEMPLATE, preauth_key
-
 # Authorization (Article XIX)
 from plugshub_common.authz import (
     PermissionChecker,
@@ -79,6 +76,9 @@ from plugshub_common.observability import (
     init_error_tracking,
     is_error_tracking_enabled,
 )
+
+# The terminal pre-auth park (Article VIII §4 — a cross-service contract)
+from plugshub_common.preauth import PREAUTH_KEY_TEMPLATE, preauth_key
 
 # Resilience (Articles VIII §1, XXVI §3)
 from plugshub_common.resilience import (
@@ -199,7 +199,8 @@ __all__ = [
 # number, so an environment reporting it is telling you it has no metadata rather
 # than quietly naming a version that might be wrong.
 try:  # pragma: no cover - trivial, and the except needs an uninstalled tree to hit
-    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+    from importlib.metadata import PackageNotFoundError
+    from importlib.metadata import version as _pkg_version
 
     __version__ = _pkg_version("plugshub-common")
 except PackageNotFoundError:  # pragma: no cover

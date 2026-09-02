@@ -39,11 +39,23 @@ all = [
     "sentry-sdk>=1.40",
 ]
 # Local development / CI gates (Article XVII §5).
+#
+# `httpx` is not optional despite the package never importing it: starlette's
+# TestClient refuses to start without it, so `pytest` on a clean checkout failed
+# at COLLECTION with "The starlette.testclient module requires the httpx
+# package". It was in no metadata at all — the suite only ever ran where someone
+# happened to have httpx installed for another reason.
 dev = [
     "pytest>=7",
     "pytest-asyncio>=0.21",
-    "ruff>=0.1",
-    "mypy>=1.0",
+    "pytest-cov>=4",
+    "httpx>=0.24",
+    # PINNED, not floated. `ruff format` output changes between minor releases, so
+    # a range turns the format gate into a time bomb: CI reformats and fails on a
+    # commit that touched nothing, and the failure looks like the author's fault.
+    # These are the versions the rest of the fleet pins (terminal, ocpi, ocpp).
+    "ruff==0.6.9",
+    "mypy==1.11.2",
 ]
 
 [project.urls]
@@ -67,4 +79,10 @@ testpaths = ["tests"]
 [tool.mypy]
 python_version = "3.9"
 ignore_missing_imports = true
+# Do not type-check INSTALLED packages. `python_version = "3.9"` makes mypy parse
+# everything it follows as 3.9, and third-party code is not written to our floor —
+# anyio uses `match`, so mypy died with a syntax error inside a dependency before
+# reaching a single line of ours. With this, their imports resolve to Any
+# (ignore_missing_imports above) and only this package is checked.
+no_site_packages = true
 warn_unused_ignores = false

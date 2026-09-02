@@ -11,8 +11,6 @@ import re
 from importlib.metadata import version as pkg_version
 from pathlib import Path
 
-import tomllib
-
 import plugshub_common
 
 
@@ -36,7 +34,12 @@ def test_version_agrees_with_pyproject():
     pyproject = root / "pyproject.toml"
     if not pyproject.exists():  # installed-only environments
         return
-    declared = tomllib.loads(pyproject.read_text())["project"]["version"]
+    # Read with a regex rather than tomllib: this package declares
+    # requires-python = ">=3.9" and tomllib only exists from 3.11, so importing it
+    # would make the SUITE unrunnable on the very floor the package promises.
+    m = re.search(r'^version\s*=\s*"([^"]+)"', pyproject.read_text(), re.MULTILINE)
+    assert m, "no version in pyproject.toml"
+    declared = m.group(1)
     assert plugshub_common.__version__ == declared, (
         f"__version__ {plugshub_common.__version__} != pyproject {declared} — "
         "reinstall the package, or the metadata is stale"

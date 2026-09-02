@@ -270,8 +270,8 @@ async def test_execute_and_fetch_all_also_retry_transient_errors():
 
 
 async def test_retries_are_bounded_then_propagate():
-    """Retries are bounded — persistent transient failures eventually propagate, not loop forever.
-    """
+    """Retries are bounded — persistent transient failures eventually propagate,
+    rather than looping forever."""
     always_broken = _SeqConn(exec_error=ConnectionResetError("gone away"))
     pool_backend = _SeqPool([always_broken])
     policy = RetryPolicy(max_attempts=2, base_delay=0.0, max_delay=0.0, jitter=False)
@@ -284,8 +284,8 @@ async def test_retries_are_bounded_then_propagate():
 
 
 async def test_ping_before_use_can_be_disabled():
-    """When ``ping_before_use`` is off, a dead-ping connection is used anyway (no liveness check).
-    """
+    """When ``ping_before_use`` is off, a dead-ping connection is used anyway
+    (no liveness check)."""
     from plugshub_common.db import DBConfig
 
     conn = _SeqConn(ping_error=ConnectionResetError("would be dead if checked"), rows=[(7,)])

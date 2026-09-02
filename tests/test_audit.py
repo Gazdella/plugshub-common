@@ -21,8 +21,16 @@ def test_record_has_mandatory_shape():
         request_id="req-1",
     )
     d = rec.to_dict()
-    for field in ("actor_id", "actor_type", "action", "target", "tenant_id", "timestamp",
-                  "request_id", "outcome"):
+    for field in (
+        "actor_id",
+        "actor_type",
+        "action",
+        "target",
+        "tenant_id",
+        "timestamp",
+        "request_id",
+        "outcome",
+    ):
         assert field in d
     assert d["timestamp"].endswith("Z")
     assert d["outcome"] == "success"
@@ -45,6 +53,7 @@ def test_append_only_snapshot_is_immutable():
     assert len(snapshot) == 1
     # snapshot is a tuple copy; mutating it does not affect the trail
     assert isinstance(snapshot, tuple)
-    writer.record(actor_id="u1", actor_type="user", action="logout", target="u1",
-                  outcome=OUTCOME_FAILURE)
+    writer.record(
+        actor_id="u1", actor_type="user", action="logout", target="u1", outcome=OUTCOME_FAILURE
+    )
     assert len(sink.records) == 2 and len(snapshot) == 1

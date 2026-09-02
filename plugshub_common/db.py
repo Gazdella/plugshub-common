@@ -271,7 +271,7 @@ class TenantResolver:
         names: Set[str] = set()
         for row in rows:
             name = str(row[0])
-            names.add(name[len(_TENANT_PREFIX):] if name.startswith(_TENANT_PREFIX) else name)
+            names.add(name[len(_TENANT_PREFIX) :] if name.startswith(_TENANT_PREFIX) else name)
         return names
 
     async def get_tenants(self, force: bool = False) -> Set[str]:
@@ -293,5 +293,5 @@ class TenantResolver:
         tenants = await self.get_tenants()
         validate_tenant(tenant_id, tenants, raise_on_invalid=True)
         prefixed = tenant_id.startswith(_TENANT_PREFIX)
-        bare = tenant_id[len(_TENANT_PREFIX):] if prefixed else tenant_id
+        bare = tenant_id[len(_TENANT_PREFIX) :] if prefixed else tenant_id
         return _TENANT_PREFIX + bare

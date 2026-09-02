@@ -137,7 +137,7 @@ def test_error_tracking_reports_5xx_not_4xx():
         app, _ = _build_app()
         client = TestClient(app, raise_server_exceptions=False)
         client.get("/api/v1/missing")  # 404 -> not reported
-        client.get("/api/v1/boom")     # 500 -> reported
+        client.get("/api/v1/boom")  # 500 -> reported
         assert len(fake.captured) == 1
     finally:
         reset_error_tracking()

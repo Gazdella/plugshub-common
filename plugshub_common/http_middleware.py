@@ -59,9 +59,7 @@ class RedMetrics:
         if status >= 500:
             self.errors += 1
         key = "{} {}".format(method, path)
-        bucket = self.by_route.setdefault(
-            key, {"requests": 0.0, "errors": 0.0, "duration": 0.0}
-        )
+        bucket = self.by_route.setdefault(key, {"requests": 0.0, "errors": 0.0, "duration": 0.0})
         bucket["requests"] += 1
         bucket["duration"] += duration
         if status >= 500:
@@ -127,9 +125,7 @@ def install_exception_handlers(app: Any) -> None:
         request_id = _request_id(request)
         # Report only genuine server faults (5xx); 4xx client errors are filtered out (XVI §5).
         capture_exception(exc)
-        response = JSONResponse(
-            exc.to_envelope(request_id), status_code=exc.http_status
-        )
+        response = JSONResponse(exc.to_envelope(request_id), status_code=exc.http_status)
         response.headers[REQUEST_ID_HEADER] = request_id
         if isinstance(exc, RateLimitedError) and exc.retry_after is not None:
             response.headers["Retry-After"] = str(exc.retry_after)
@@ -139,9 +135,7 @@ def install_exception_handlers(app: Any) -> None:
         request_id = _request_id(request)
         # Unhandled exceptions are 5xx server faults — report to the error tracker (Article IV §6).
         capture_exception(exc)
-        response = JSONResponse(
-            error_from_exception(exc, request_id), status_code=500
-        )
+        response = JSONResponse(error_from_exception(exc, request_id), status_code=500)
         response.headers[REQUEST_ID_HEADER] = request_id
         return response
 

@@ -42,6 +42,4 @@ def preauth_key(tenant_id: str, charger_id: str, connector_id: Any) -> str:
     produce the same key, so it is stringified here rather than at each call site — which
     is precisely the kind of detail two independent implementations get subtly wrong.
     """
-    return PREAUTH_KEY_TEMPLATE.format(
-        tenant=tenant_id, charger=charger_id, connector=connector_id
-    )
+    return PREAUTH_KEY_TEMPLATE.format(tenant=tenant_id, charger=charger_id, connector=connector_id)
