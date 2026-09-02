@@ -183,4 +183,24 @@ __all__ = [
     "verify_service_token",
 ]
 
-__version__ = "0.4.1"
+# Read from the INSTALLED package metadata, i.e. from pyproject.toml — never
+# hardcoded here.
+#
+# It was hardcoded, and it drifted: pyproject went 0.4.1 -> 0.4.2 -> 0.4.3 -> 0.5.0
+# while this string stayed at "0.4.1" through every one of those releases. Anyone
+# checking `plugshub_common.__version__` to find out what a service was running got
+# 0.4.1 no matter what was installed — which is exactly how a fleet-wide version
+# audit reached the wrong conclusion on 2026-09-02, mid-incident.
+#
+# One source of truth. A release bumps pyproject.toml and this follows.
+#
+# The fallback is for a source tree that was never pip-installed (running tests
+# straight out of a checkout); "0.0.0.dev0" is deliberately not a plausible release
+# number, so an environment reporting it is telling you it has no metadata rather
+# than quietly naming a version that might be wrong.
+try:  # pragma: no cover - trivial, and the except needs an uninstalled tree to hit
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    __version__ = _pkg_version("plugshub-common")
+except PackageNotFoundError:  # pragma: no cover
+    __version__ = "0.0.0.dev0"
