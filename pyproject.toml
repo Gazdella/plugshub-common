@@ -50,8 +50,12 @@ dev = [
     "pytest-asyncio>=0.21",
     "pytest-cov>=4",
     "httpx>=0.24",
-    "ruff>=0.1",
-    "mypy>=1.0",
+    # PINNED, not floated. `ruff format` output changes between minor releases, so
+    # a range turns the format gate into a time bomb: CI reformats and fails on a
+    # commit that touched nothing, and the failure looks like the author's fault.
+    # These are the versions the rest of the fleet pins (terminal, ocpi, ocpp).
+    "ruff==0.6.9",
+    "mypy==1.11.2",
 ]
 
 [project.urls]
