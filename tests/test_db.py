@@ -523,3 +523,19 @@ def test_bound_pool_matches_the_real_aiomysql_acquire_shape():
 
     for dunder in ("__await__", "__aenter__", "__aexit__"):
         assert hasattr(Ctx, dunder), dunder
+
+
+def test_the_driver_still_exposes_the_transport_the_bound_reads():
+    """`bind_socket_timeout` reaches the socket through `Connection._writer` — a private
+    attribute. If a driver upgrade renames it, the bound degrades to a silent no-op and a
+    service goes back to hanging for ~15 minutes with nothing to show for it. Fail here instead.
+
+    Verified present on 0.3.0 and 0.3.2; the fleet pins 0.2.0 through >=0.3.2.
+    """
+    pytest.importorskip("aiomysql", reason="the `db` extra is optional")
+    import inspect
+
+    import aiomysql
+
+    assert "_writer" in inspect.getsource(aiomysql.Connection)
+    assert "connect_timeout" in inspect.signature(aiomysql.Connection.__init__).parameters
