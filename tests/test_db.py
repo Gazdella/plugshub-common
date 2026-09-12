@@ -420,3 +420,16 @@ async def test_socket_is_bound_before_the_liveness_ping(monkeypatch):
     await DBPool(pool=_Pool()).fetch_one("SELECT 1")
     assert order == ["bind", "ping"]
     assert sock.calls == [(_socket.IPPROTO_TCP, 18, 30_000)]
+
+
+def test_public_helper_is_usable_without_dbpool(monkeypatch):
+    """The four services that build their own aiomysql pool call this directly."""
+    import socket as _socket
+
+    from plugshub_common import db as db_mod
+    from plugshub_common.db import bind_socket_timeout
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    sock = _FakeSocket()
+    bind_socket_timeout(_conn_with_socket(sock), 15)
+    assert sock.calls == [(_socket.IPPROTO_TCP, 18, 15_000)]

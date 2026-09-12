@@ -38,11 +38,47 @@ from plugshub_common.errors import DependencyUnavailableError
 from plugshub_common.resilience import RetryPolicy, retry_async
 from plugshub_common.tenant import validate_tenant
 
-__all__ = ["DBConfig", "DBPool", "TenantResolver"]
+__all__ = ["DBConfig", "DBPool", "TenantResolver", "bind_socket_timeout"]
 
 
 # ``TCP_USER_TIMEOUT`` is Linux-only (absent on macOS/BSD, so a dev box keeps kernel defaults).
 _TCP_USER_TIMEOUT = getattr(socket, "TCP_USER_TIMEOUT", None)
+
+
+def bind_socket_timeout(conn: Any, timeout_seconds: int = 30) -> None:
+    """Bound how long a query on ``conn`` may hang once its peer stops answering (Article IX §7).
+
+    ``aiomysql`` 0.3.0 has ``connect_timeout`` and **no read or write timeout**, so a query on a
+    dead-but-ESTABLISHED socket is an unbounded await. On 2026-09-11 that froze the billing
+    consumer for 16 minutes: RDS answered every retransmission with a RST, none of them reached
+    the client, and the only bound left was ``tcp_retries2`` at ~924 s. ``TCP_USER_TIMEOUT`` tells
+    the kernel to abort such a socket after ``timeout_seconds``, so the await raises a connection
+    error the caller's pool already knows how to handle.
+
+    This is deliberately **not** ``asyncio.wait_for`` around the query. Cancelling a query returns
+    the connection to the pool with a server response still on the wire, poisoning it for the next
+    caller; the kernel aborting the socket leaves nothing to poison.
+
+    Public because four services build their own ``aiomysql`` pools rather than using
+    :class:`DBPool`, and the alternative is five copies of this ``setsockopt`` (Article XVII §2).
+    Call it on each connection after acquiring it and **before** any ping — a ping is itself an
+    unbounded await on such a socket. Safe to call repeatedly; ``setsockopt`` is idempotent.
+
+    Linux-only (``TCP_USER_TIMEOUT`` is absent on macOS/BSD); elsewhere it is a no-op, as it is for
+    a connection exposing no transport (an injected test double) or ``timeout_seconds <= 0``.
+    """
+    if _TCP_USER_TIMEOUT is None or timeout_seconds <= 0:
+        return
+    writer = getattr(conn, "_writer", None)
+    sock = writer.get_extra_info("socket") if writer is not None else None
+    if sock is None:
+        return
+    try:
+        sock.setsockopt(socket.IPPROTO_TCP, _TCP_USER_TIMEOUT, timeout_seconds * 1000)
+    except OSError:
+        # Not a TCP socket (a unix-socket connection), or it closed between acquire and here.
+        # Neither is worth failing a query over: the caller still gets its pool's own handling.
+        pass
 
 
 def _default_transient_errors() -> Tuple[Type[BaseException], ...]:
@@ -177,35 +213,8 @@ class DBPool:
         return self._pool
 
     def _bind_socket_timeout(self, conn: Any) -> None:
-        """Bound how long a query may hang on a socket whose peer has vanished (Article IX §7).
-
-        ``aiomysql`` 0.3.0 has ``connect_timeout`` and **no read or write timeout**, so a query on
-        a dead-but-ESTABLISHED socket is an unbounded await. On 2026-09-11 that froze the billing
-        consumer for 16 minutes: RDS answered every retransmission with a RST, none of them reached
-        the client, and the only bound left was ``tcp_retries2`` at ~924 s. ``TCP_USER_TIMEOUT``
-        tells the kernel to abort such a socket after ``tcp_user_timeout`` seconds, so the await
-        raises a connection error and the pool discards the connection through the path it already
-        has for a dropped connection.
-
-        This is deliberately **not** ``asyncio.wait_for`` around the query. Cancelling a query
-        returns the connection to the pool with a server response still on the wire, poisoning it
-        for the next caller; the kernel aborting the socket leaves nothing to poison.
-
-        Applied per acquire rather than at pool creation because the pool opens connections lazily,
-        and ``setsockopt`` on an already-bound socket is idempotent.
-        """
-        if _TCP_USER_TIMEOUT is None or self._tcp_user_timeout <= 0:
-            return
-        writer = getattr(conn, "_writer", None)
-        sock = writer.get_extra_info("socket") if writer is not None else None
-        if sock is None:
-            return
-        try:
-            sock.setsockopt(socket.IPPROTO_TCP, _TCP_USER_TIMEOUT, self._tcp_user_timeout * 1000)
-        except OSError:
-            # Not a TCP socket (a unix-socket connection), or it closed between acquire and here.
-            # Neither is worth failing a query over: the caller still gets the pool's own handling.
-            pass
+        """Apply this pool's configured dead-socket bound (see :func:`bind_socket_timeout`)."""
+        bind_socket_timeout(conn, self._tcp_user_timeout)
 
     async def _check_liveness(self, conn: Any) -> None:
         """Ping-before-use: a failed ping means a stale/dead connection (Article IX §7).

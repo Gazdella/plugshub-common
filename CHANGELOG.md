@@ -21,6 +21,13 @@ Article XVII §5).
   bound is applied *before* the liveness ping, which is itself an unbounded await on such a
   socket. Linux-only; other platforms keep kernel defaults.
 
+### Added
+
+- `db.bind_socket_timeout(conn, timeout_seconds=30)` — the same bound as a public helper, for the
+  four services that build their own `aiomysql` pool rather than using `DBPool`. Exported so the
+  fleet has one implementation of this `setsockopt` instead of five (Article XVII §2). Call it on
+  each connection after acquiring it and before any ping.
+
   Deliberately **not** `asyncio.wait_for` around the query: cancelling mid-query returns the
   connection to the pool with a server response still on the wire, poisoning it for the next
   caller.
