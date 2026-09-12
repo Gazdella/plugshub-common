@@ -19,11 +19,17 @@ constraint violations, and other non-transient driver errors propagate on the fi
 failover is a brief reconnect blip, never a service restart (this is the DB-side counterpart to the
 HTTP resilience of Article VIII §1).
 
+Both of those mechanisms assume the query eventually returns. A socket whose peer has vanished
+without the client learning of it breaks that assumption — ``aiomysql`` has no read timeout, so the
+await never completes and neither the ping nor the retry ever runs. ``DBConfig.tcp_user_timeout``
+closes that hole at the kernel (see :meth:`DBPool._bind_socket_timeout`).
+
 ``aiomysql`` is imported lazily (the ``db`` extra), and the tenant resolver's discovery function is
 injectable, so this module imports and unit-tests without a live database.
 """
 
 import asyncio
+import socket
 import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Awaitable, Callable, List, Optional, Sequence, Set, Tuple, Type
@@ -33,6 +39,10 @@ from plugshub_common.resilience import RetryPolicy, retry_async
 from plugshub_common.tenant import validate_tenant
 
 __all__ = ["DBConfig", "DBPool", "TenantResolver"]
+
+
+# ``TCP_USER_TIMEOUT`` is Linux-only (absent on macOS/BSD, so a dev box keeps kernel defaults).
+_TCP_USER_TIMEOUT = getattr(socket, "TCP_USER_TIMEOUT", None)
 
 
 def _default_transient_errors() -> Tuple[Type[BaseException], ...]:
@@ -80,6 +90,9 @@ class DBConfig:
     # explicit charset aiomysql defaults to utf8 (mb3) — silent truncation risk.
     charset: str = "utf8mb4"
     use_unicode: bool = True
+    # Seconds the kernel may keep retransmitting on a connection whose peer has gone silent
+    # before it aborts the socket. See :meth:`DBPool._bind_socket_timeout`. 0 disables.
+    tcp_user_timeout: int = 30
 
 
 class DBPool:
@@ -111,6 +124,7 @@ class DBPool:
         self._config = config
         self._pool = pool
         self._ping_before_use = config.ping_before_use if config is not None else True
+        self._tcp_user_timeout = config.tcp_user_timeout if config is not None else 30
         self._transient_errors = transient_errors or _default_transient_errors()
         base_policy = retry_policy or RetryPolicy(max_attempts=3, base_delay=0.02, max_delay=0.2)
         # The pool owns which errors are retryable, regardless of what a caller-supplied policy
@@ -162,6 +176,37 @@ class DBPool:
             raise DependencyUnavailableError("database pool is not started")
         return self._pool
 
+    def _bind_socket_timeout(self, conn: Any) -> None:
+        """Bound how long a query may hang on a socket whose peer has vanished (Article IX §7).
+
+        ``aiomysql`` 0.3.0 has ``connect_timeout`` and **no read or write timeout**, so a query on
+        a dead-but-ESTABLISHED socket is an unbounded await. On 2026-09-11 that froze the billing
+        consumer for 16 minutes: RDS answered every retransmission with a RST, none of them reached
+        the client, and the only bound left was ``tcp_retries2`` at ~924 s. ``TCP_USER_TIMEOUT``
+        tells the kernel to abort such a socket after ``tcp_user_timeout`` seconds, so the await
+        raises a connection error and the pool discards the connection through the path it already
+        has for a dropped connection.
+
+        This is deliberately **not** ``asyncio.wait_for`` around the query. Cancelling a query
+        returns the connection to the pool with a server response still on the wire, poisoning it
+        for the next caller; the kernel aborting the socket leaves nothing to poison.
+
+        Applied per acquire rather than at pool creation because the pool opens connections lazily,
+        and ``setsockopt`` on an already-bound socket is idempotent.
+        """
+        if _TCP_USER_TIMEOUT is None or self._tcp_user_timeout <= 0:
+            return
+        writer = getattr(conn, "_writer", None)
+        sock = writer.get_extra_info("socket") if writer is not None else None
+        if sock is None:
+            return
+        try:
+            sock.setsockopt(socket.IPPROTO_TCP, _TCP_USER_TIMEOUT, self._tcp_user_timeout * 1000)
+        except OSError:
+            # Not a TCP socket (a unix-socket connection), or it closed between acquire and here.
+            # Neither is worth failing a query over: the caller still gets the pool's own handling.
+            pass
+
     async def _check_liveness(self, conn: Any) -> None:
         """Ping-before-use: a failed ping means a stale/dead connection (Article IX §7).
 
@@ -187,6 +232,7 @@ class DBPool:
 
         async def _attempt() -> int:
             async with pool.acquire() as conn:
+                self._bind_socket_timeout(conn)
                 await self._check_liveness(conn)
                 async with conn.cursor() as cur:
                     if schema:
@@ -208,6 +254,7 @@ class DBPool:
 
         async def _attempt() -> List[Tuple[Any, ...]]:
             async with pool.acquire() as conn:
+                self._bind_socket_timeout(conn)
                 await self._check_liveness(conn)
                 async with conn.cursor() as cur:
                     if schema:
@@ -229,6 +276,7 @@ class DBPool:
 
         async def _attempt() -> Optional[Tuple[Any, ...]]:
             async with pool.acquire() as conn:
+                self._bind_socket_timeout(conn)
                 await self._check_liveness(conn)
                 async with conn.cursor() as cur:
                     if schema:

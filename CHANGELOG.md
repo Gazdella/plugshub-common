@@ -6,6 +6,25 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
+## [Unreleased]
+
+### Fixed
+
+- `db` — **a query on a dead-but-ESTABLISHED socket was an unbounded await.** `aiomysql` 0.3.0
+  has `connect_timeout` and no read or write timeout, so when a peer vanishes without the client
+  learning of it, `await cursor.execute()` never returns and the only bound left is the kernel's
+  `tcp_retries2` at ~924 s. On 2026-09-11 that froze the billing SQS consumer for 16 minutes.
+  Both of the pool's existing failover mechanisms — ping-before-use and transient-error retry —
+  assume the query returns, so neither one ever ran. `DBConfig.tcp_user_timeout` (default 30 s,
+  `0` disables) now sets `TCP_USER_TIMEOUT` on each acquired connection's socket, so the kernel
+  aborts it and the await raises a connection error the pool already knows how to handle. The
+  bound is applied *before* the liveness ping, which is itself an unbounded await on such a
+  socket. Linux-only; other platforms keep kernel defaults.
+
+  Deliberately **not** `asyncio.wait_for` around the query: cancelling mid-query returns the
+  connection to the pool with a server response still on the wire, poisoning it for the next
+  caller.
+
 ## [0.4.3] - 2026-08-13
 
 ### Security
