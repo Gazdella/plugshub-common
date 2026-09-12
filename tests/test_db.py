@@ -305,3 +305,131 @@ def test_dbconfig_defaults_utf8mb4():
     cfg = DBConfig(host="h")
     assert cfg.charset == "utf8mb4"
     assert cfg.use_unicode is True
+
+
+# --- dead-socket bound (Article IX §7) -------------------------------------------------------
+#
+# The 2026-09-11 billing hang: a dead-but-ESTABLISHED socket turned a query into an unbounded
+# await, because aiomysql has no read timeout. These pin the kernel-level bound that replaces it.
+
+
+class _FakeSocket:
+    def __init__(self, raises=None):
+        self.calls = []
+        self._raises = raises
+
+    def setsockopt(self, level, option, value):
+        if self._raises is not None:
+            raise self._raises
+        self.calls.append((level, option, value))
+
+
+class _FakeWriter:
+    def __init__(self, sock):
+        self._sock = sock
+
+    def get_extra_info(self, name):
+        return self._sock if name == "socket" else None
+
+
+def _conn_with_socket(sock):
+    conn = _FakeConn([], [])
+    conn._writer = _FakeWriter(sock)
+    return conn
+
+
+def test_socket_timeout_is_applied_in_milliseconds(monkeypatch):
+    import socket as _socket
+
+    from plugshub_common import db as db_mod
+
+    # Pinned rather than read from the platform: TCP_USER_TIMEOUT is Linux-only, and the test
+    # must assert the same thing on a macOS dev box as in CI.
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    sock = _FakeSocket()
+    pool = DBPool(db_mod.DBConfig(host="h", tcp_user_timeout=30))
+    pool._bind_socket_timeout(_conn_with_socket(sock))
+    assert sock.calls == [(_socket.IPPROTO_TCP, 18, 30_000)]
+
+
+def test_socket_timeout_zero_disables(monkeypatch):
+    from plugshub_common import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    sock = _FakeSocket()
+    pool = DBPool(db_mod.DBConfig(host="h", tcp_user_timeout=0))
+    pool._bind_socket_timeout(_conn_with_socket(sock))
+    assert sock.calls == []
+
+
+def test_socket_timeout_skipped_where_unsupported(monkeypatch):
+    from plugshub_common import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", None)
+    sock = _FakeSocket()
+    pool = DBPool(db_mod.DBConfig(host="h"))
+    pool._bind_socket_timeout(_conn_with_socket(sock))
+    assert sock.calls == []
+
+
+def test_socket_timeout_tolerates_a_non_tcp_socket(monkeypatch):
+    from plugshub_common import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    pool = DBPool(db_mod.DBConfig(host="h"))
+    # A unix-socket connection raises here; a query must not fail because of it.
+    pool._bind_socket_timeout(_conn_with_socket(_FakeSocket(raises=OSError("not TCP"))))
+
+
+def test_socket_timeout_no_op_without_a_writer():
+    from plugshub_common import db as db_mod
+
+    # An injected pool (tests, and the mock connections above) exposes no transport.
+    DBPool(db_mod.DBConfig(host="h"))._bind_socket_timeout(_FakeConn([], []))
+
+
+@pytest.mark.asyncio
+async def test_socket_is_bound_before_the_liveness_ping(monkeypatch):
+    """Ordering is the point: ping() is itself an unbounded await on a dead socket, so the
+    bound has to be in place before it runs, not after."""
+    import socket as _socket
+
+    from plugshub_common import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    order = []
+    sock = _FakeSocket()
+    conn = _conn_with_socket(sock)
+
+    async def _ping(reconnect=True):
+        order.append("ping")
+
+    conn.ping = _ping
+
+    class _Pool:
+        def acquire(self):
+            return conn
+
+    real_bind = DBPool._bind_socket_timeout
+
+    def _spy(self, c):
+        order.append("bind")
+        return real_bind(self, c)
+
+    monkeypatch.setattr(DBPool, "_bind_socket_timeout", _spy)
+    await DBPool(pool=_Pool()).fetch_one("SELECT 1")
+    assert order == ["bind", "ping"]
+    assert sock.calls == [(_socket.IPPROTO_TCP, 18, 30_000)]
+
+
+def test_public_helper_is_usable_without_dbpool(monkeypatch):
+    """The four services that build their own aiomysql pool call this directly."""
+    import socket as _socket
+
+    from plugshub_common import db as db_mod
+    from plugshub_common.db import bind_socket_timeout
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    sock = _FakeSocket()
+    bind_socket_timeout(_conn_with_socket(sock), 15)
+    assert sock.calls == [(_socket.IPPROTO_TCP, 18, 15_000)]
