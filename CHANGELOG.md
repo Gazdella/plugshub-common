@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
+## [0.4.5] - 2026-09-12
+
+### Added
+
+- `db.BoundPool` — wraps an `aiomysql` pool so every connection it hands out carries the
+  dead-socket bound added in 0.4.4, with no change at the call sites. For the five services that
+  build their own pool instead of using `DBPool`: billing, session, notification, terminal and
+  mobile-app-server have **84 `acquire()` call sites between them**, and a bound that has to be
+  remembered at each one is a bound that will be missed at one. Wrap once where the pool is
+  created instead:
+
+  ```python
+  pool = BoundPool(await aiomysql.create_pool(...))
+  ```
+
+  `acquire()` is bound; everything else (`close`, `wait_closed`, `size`, `freesize`, `maxsize`)
+  proxies through. Supports both shapes aiomysql's `acquire()` offers — awaitable and async
+  context manager — because the fleet uses both, with a test pinning the driver's shape so an
+  aiomysql upgrade that drops one fails here rather than at runtime.
+
 ## [0.4.4] - 2026-09-12
 
 ### Fixed
@@ -169,6 +189,7 @@ every cross-cutting capability from the shared library (Article XVII §1):
 - `health` — standard `/health` (liveness) and `/ready` (readiness) response shapes (Article VII).
 - Initial package scaffolding.
 
+[0.4.5]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.5
 [0.4.4]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.2

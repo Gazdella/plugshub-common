@@ -433,3 +433,109 @@ def test_public_helper_is_usable_without_dbpool(monkeypatch):
     sock = _FakeSocket()
     bind_socket_timeout(_conn_with_socket(sock), 15)
     assert sock.calls == [(_socket.IPPROTO_TCP, 18, 15_000)]
+
+
+# --- BoundPool -------------------------------------------------------------------------------
+#
+# aiomysql's acquire() result is both awaitable and an async context manager, and the fleet uses
+# both shapes (31 `async with` and 1 bare `await` in session-service alone). Both must bind.
+
+
+class _FakeAcquire:
+    def __init__(self, conn):
+        self._conn = conn
+        self.exited = False
+
+    def __await__(self):
+        async def _go():
+            return self._conn
+
+        return _go().__await__()
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *exc):
+        self.exited = True
+        return False
+
+
+class _RecordingPool:
+    def __init__(self, conn):
+        self._conn = conn
+        self.last = None
+        self.closed = False
+        self.freesize = 3
+
+    def acquire(self):
+        self.last = _FakeAcquire(self._conn)
+        return self.last
+
+    def close(self):
+        self.closed = True
+
+
+@pytest.mark.asyncio
+async def test_bound_pool_binds_on_async_with(monkeypatch):
+    import socket as _socket
+
+    from plugshub_common import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    sock = _FakeSocket()
+    pool = db_mod.BoundPool(_RecordingPool(_conn_with_socket(sock)), 25)
+    async with pool.acquire() as conn:
+        assert conn is not None
+    assert sock.calls == [(_socket.IPPROTO_TCP, 18, 25_000)]
+    assert pool._pool.last.exited is True
+
+
+@pytest.mark.asyncio
+async def test_bound_pool_binds_on_bare_await(monkeypatch):
+    import socket as _socket
+
+    from plugshub_common import db as db_mod
+
+    monkeypatch.setattr(db_mod, "_TCP_USER_TIMEOUT", 18)
+    sock = _FakeSocket()
+    pool = db_mod.BoundPool(_RecordingPool(_conn_with_socket(sock)), 25)
+    conn = await pool.acquire()
+    assert conn is not None
+    assert sock.calls == [(_socket.IPPROTO_TCP, 18, 25_000)]
+
+
+def test_bound_pool_proxies_everything_else():
+    """close/wait_closed/size/freesize must keep working — /ready reads them."""
+    from plugshub_common import db as db_mod
+
+    inner = _RecordingPool(_FakeConn([], []))
+    pool = db_mod.BoundPool(inner)
+    assert pool.freesize == 3
+    pool.close()
+    assert inner.closed is True
+
+
+def test_bound_pool_matches_the_real_aiomysql_acquire_shape():
+    """BoundPool delegates to three dunders on aiomysql's acquire result. If a driver upgrade
+    drops one, every wrapped pool breaks at runtime — catch it here instead."""
+    pytest.importorskip("aiomysql", reason="the `db` extra is optional")
+    from aiomysql.utils import _PoolAcquireContextManager as Ctx
+
+    for dunder in ("__await__", "__aenter__", "__aexit__"):
+        assert hasattr(Ctx, dunder), dunder
+
+
+def test_the_driver_still_exposes_the_transport_the_bound_reads():
+    """`bind_socket_timeout` reaches the socket through `Connection._writer` — a private
+    attribute. If a driver upgrade renames it, the bound degrades to a silent no-op and a
+    service goes back to hanging for ~15 minutes with nothing to show for it. Fail here instead.
+
+    Verified present on 0.3.0 and 0.3.2; the fleet pins 0.2.0 through >=0.3.2.
+    """
+    pytest.importorskip("aiomysql", reason="the `db` extra is optional")
+    import inspect
+
+    import aiomysql
+
+    assert "_writer" in inspect.getsource(aiomysql.Connection)
+    assert "connect_timeout" in inspect.signature(aiomysql.Connection.__init__).parameters
