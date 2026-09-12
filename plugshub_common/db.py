@@ -38,7 +38,7 @@ from plugshub_common.errors import DependencyUnavailableError
 from plugshub_common.resilience import RetryPolicy, retry_async
 from plugshub_common.tenant import validate_tenant
 
-__all__ = ["DBConfig", "DBPool", "TenantResolver", "bind_socket_timeout"]
+__all__ = ["BoundPool", "DBConfig", "DBPool", "TenantResolver", "bind_socket_timeout"]
 
 
 # ``TCP_USER_TIMEOUT`` is Linux-only (absent on macOS/BSD, so a dev box keeps kernel defaults).
@@ -79,6 +79,59 @@ def bind_socket_timeout(conn: Any, timeout_seconds: int = 30) -> None:
         # Not a TCP socket (a unix-socket connection), or it closed between acquire and here.
         # Neither is worth failing a query over: the caller still gets its pool's own handling.
         pass
+
+
+class _BoundAcquire:
+    """``Pool.acquire()``'s result, with the dead-socket bound applied to the connection.
+
+    Mirrors ``aiomysql``'s own acquire result, which is **both** awaitable (``conn = await
+    pool.acquire()``) and an async context manager (``async with pool.acquire() as conn``). Both
+    shapes are in use across the fleet, so both are supported here.
+    """
+
+    def __init__(self, ctx: Any, timeout_seconds: int) -> None:
+        self._ctx = ctx
+        self._timeout = timeout_seconds
+
+    def __await__(self) -> Any:
+        conn = yield from self._ctx.__await__()
+        bind_socket_timeout(conn, self._timeout)
+        return conn
+
+    async def __aenter__(self) -> Any:
+        conn = await self._ctx.__aenter__()
+        bind_socket_timeout(conn, self._timeout)
+        return conn
+
+    async def __aexit__(self, *exc_info: Any) -> Any:
+        return await self._ctx.__aexit__(*exc_info)
+
+
+class BoundPool:
+    """An ``aiomysql`` pool whose every acquired connection carries the dead-socket bound.
+
+    For the services that build their own ``aiomysql`` pool instead of using :class:`DBPool`.
+    Wrap the pool once where it is created::
+
+        pool = BoundPool(await aiomysql.create_pool(...))
+
+    and every ``acquire()`` downstream is bound, with no change at the call sites — which matters:
+    those five services have 84 of them between them, and a bound that has to be remembered at
+    each one is a bound that will be missed at one.
+
+    Everything other than ``acquire`` proxies to the wrapped pool, so ``close()``,
+    ``wait_closed()``, ``size``, ``freesize`` and ``maxsize`` keep working unchanged.
+    """
+
+    def __init__(self, pool: Any, timeout_seconds: int = 30) -> None:
+        self._pool = pool
+        self._timeout = timeout_seconds
+
+    def acquire(self, *args: Any, **kwargs: Any) -> _BoundAcquire:
+        return _BoundAcquire(self._pool.acquire(*args, **kwargs), self._timeout)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._pool, name)
 
 
 def _default_transient_errors() -> Tuple[Type[BaseException], ...]:
