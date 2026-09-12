@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html) (SaaS Constitution Article XIV §3,
 Article XVII §5).
 
-## [Unreleased]
+## [0.4.4] - 2026-09-12
 
 ### Fixed
 
@@ -169,6 +169,7 @@ every cross-cutting capability from the shared library (Article XVII §1):
 - `health` — standard `/health` (liveness) and `/ready` (readiness) response shapes (Article VII).
 - Initial package scaffolding.
 
+[0.4.4]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.4
 [0.4.3]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.3
 [0.4.2]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.2
 [0.4.1]: https://github.com/Gazdella/plugshub-common/releases/tag/v0.4.1
